@@ -14,6 +14,10 @@ import (
 	"context"
 	"encoding/binary"
 	"fmt"
+	"log"
+	"os"
+	"runtime"
+	"runtime/pprof"
 	"strings"
 	"sync"
 	"time"
@@ -460,7 +464,10 @@ func (s *Service) tryCreateProtoRegistry() {
 	})
 }
 
+//nolint:gocognit,cyclop // testing
 func (s *Service) createProtoRegistry(ctx context.Context) error {
+	runtime.GC() //nolint:revive // testing get up-to-date statistics
+
 	startTime := time.Now()
 
 	files := make(map[string]filesystem.File)
@@ -548,6 +555,16 @@ func (s *Service) createProtoRegistry(ctx context.Context) error {
 		zap.Int("registered_types", len(fileDescriptors)),
 		zap.Duration("operation_duration", totalDuration))
 
+	fend, err := os.Create("protomemprofile-noextra-unique")
+	if err != nil {
+		log.Fatal("could not create memory profile: ", err) //nolint:gocritic,revive // testing
+	}
+	defer fend.Close() // error handling omitted for example
+	runtime.GC()       //nolint:revive // testing get up-to-date statistics
+	if err := pprof.WriteHeapProfile(fend); err != nil {
+		log.Fatal("could not write memory profile: ", err) // //nolint:revive // testing
+	}
+
 	return nil
 }
 
@@ -608,8 +625,8 @@ func (s *Service) protoFileToDescriptor(files map[string]filesystem.File) ([]*de
 		Accessor:              protoparse.FileContentsFromMap(filesStr),
 		ImportPaths:           []string{"."},
 		InferImportPaths:      true,
-		ValidateUnlinkedFiles: true,
-		IncludeSourceCodeInfo: true,
+		ValidateUnlinkedFiles: false,
+		IncludeSourceCodeInfo: false,
 		ErrorReporter:         errorReporter,
 	}
 	descriptors, err := parser.ParseFiles(filePaths...)
